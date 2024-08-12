@@ -6,26 +6,13 @@ import (
 	"time"
 
 	"github.com/lambawebdev/metrics/internal/handlers"
+	"github.com/lambawebdev/metrics/internal/validators"
 )
 
 const (
 	pollIntervalSeconds   int = 2
 	reportIntervalSeconds int = 10
 )
-
-func typesMetrics() map[string][]string {
-	return map[string][]string{
-		"gauge": []string{
-			"Alloc", "BuckHashSys", "Frees", "GCCPUFraction",
-			"GCSys", "HeapAlloc", "HeapIdle", "HeapInuse", "HeapObjects",
-			"HeapReleased", "HeapSys", "LastGC", "Lookups", "MCacheInuse",
-			"MCacheSys", "MSpanInuse", "MSpanSys", "Mallocs", "NextGC",
-			"NumForcedGC", "NumGC", "OtherSys", "PauseTotalNs",
-			"StackInuse", "StackSys", "Sys", "TotalAlloc",
-		},
-		"counter": []string{"PollCount"},
-	}
-}
 
 type Monitor struct {
 	Alloc         uint64
@@ -105,7 +92,7 @@ func Report(m *Monitor) {
 	for {
 		<-time.After(interval)
 
-		for metricType, metrics := range typesMetrics() {
+		for metricType, metrics := range validators.TypesMetrics() {
 			for _, metricName := range metrics {
 				metricValue := reflect.Indirect(monitor).FieldByName(metricName)
 				handlers.SendMetric(metricType, metricName, metricValue)

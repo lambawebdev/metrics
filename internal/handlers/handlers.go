@@ -1,46 +1,60 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"slices"
 	"strconv"
 
 	"github.com/lambawebdev/metrics/internal/storage"
+	"github.com/lambawebdev/metrics/internal/validators"
 )
 
-func allowedMetricTypes() []string {
-	return []string{"gauge", "counter"}
+func GetMetrics(res http.ResponseWriter, req *http.Request, storage *storage.MemStorage) {
+	metricsValues := storage.GetAll()
+
+	res.Header().Set("content-Type", "application/json")
+	res.WriteHeader(http.StatusOK)
+	json.NewEncoder(res).Encode(metricsValues)
 }
 
-func UpdateMetric(res http.ResponseWriter, req *http.Request) {
-	storage := new(storage.MemStorage)
-	storage.GaugeMetric = make(map[string]float64)
-	storage.CounterMetric = make(map[string]int64)
+func GetMetric(res http.ResponseWriter, req *http.Request, storage *storage.MemStorage) {
+	metricType := req.PathValue("type")
+	metricName := req.PathValue("name")
 
-	if !slices.Contains(allowedMetricTypes(), req.PathValue("type")) {
-		http.Error(res, "Metric type is not supported!", http.StatusBadRequest)
+	validators.ValidateMetricType(metricType, res)
+	metricValue := storage.GetMetricValue(metricName)
+
+	log.Print(metricValue)
+
+	if metricValue == nil {
+		http.Error(res, "Metric not exists!", http.StatusNotFound)
 		return
 	}
 
-	if req.PathValue("type") == "gauge" {
-		value, err := strconv.ParseFloat(req.PathValue("value"), 64)
-		if err != nil {
-			res.WriteHeader(http.StatusBadRequest)
-		}
+	res.Header().Set("content-Type", "application/json")
+	res.WriteHeader(http.StatusOK)
+	json.NewEncoder(res).Encode(metricValue)
+}
 
-		storage.AddGauge(req.PathValue("name"), value)
+func UpdateMetric(res http.ResponseWriter, req *http.Request, storage *storage.MemStorage) {
+	metricType := req.PathValue("type")
+	metricName := req.PathValue("name")
+	metricValue := req.PathValue("value")
+
+	validators.ValidateMetricType(metricType, res)
+	validators.ValidateMetricValue(metricType, metricValue, res)
+
+	if metricType == "gauge" {
+		value, _ := strconv.ParseFloat(metricValue, 64)
+		storage.AddGauge(metricName, value)
 	}
 
-	if req.PathValue("type") == "counter" {
-		value, err := strconv.ParseInt(req.PathValue("value"), 10, 64)
-		if err != nil {
-			res.WriteHeader(http.StatusBadRequest)
-		}
-
-		storage.AddCounter(req.PathValue("name"), value)
+	if metricType == "counter" {
+		value, _ := strconv.ParseInt(metricValue, 10, 64)
+		storage.AddCounter(metricName, value)
 	}
 
 	res.Header().Set("content-Type", "text/plain; charset=utf-8")
