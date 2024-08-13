@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/lambawebdev/metrics/internal/config"
 	"github.com/lambawebdev/metrics/internal/storage"
 	"github.com/lambawebdev/metrics/internal/validators"
 )
@@ -62,7 +63,7 @@ func UpdateMetric(res http.ResponseWriter, req *http.Request, storage *storage.M
 }
 
 func SendMetric(metricType string, metricName string, metricValue interface{}) {
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:8080/update/%s/%s/%v", metricType, metricName, metricValue), nil)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/update/%s/%s/%v", config.GetFlagRunAddr(), metricType, metricName, metricValue), nil)
 	if err != nil {
 		log.Fatalln(err)
 	}

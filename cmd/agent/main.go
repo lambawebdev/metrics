@@ -5,13 +5,9 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/lambawebdev/metrics/internal/config"
 	"github.com/lambawebdev/metrics/internal/handlers"
 	"github.com/lambawebdev/metrics/internal/validators"
-)
-
-const (
-	pollIntervalSeconds   int = 2
-	reportIntervalSeconds int = 10
 )
 
 type Monitor struct {
@@ -48,7 +44,7 @@ type Monitor struct {
 func NewMonitor(m *Monitor) {
 	m.PollCount = 0
 	var rtm runtime.MemStats
-	var interval = time.Duration(pollIntervalSeconds) * time.Second
+	var interval = time.Duration(config.GetFlagPollIntervalSeconds()) * time.Second
 	for {
 		<-time.After(interval)
 
@@ -86,7 +82,7 @@ func NewMonitor(m *Monitor) {
 }
 
 func Report(m *Monitor) {
-	var interval = time.Duration(reportIntervalSeconds) * time.Second
+	var interval = time.Duration(config.GetFlagReportIntervalSeconds()) * time.Second
 	var monitor = reflect.ValueOf(m)
 
 	for {
@@ -102,6 +98,8 @@ func Report(m *Monitor) {
 }
 
 func main() {
+	config.ParseFlags()
+
 	var m Monitor
 
 	go NewMonitor(&m)
