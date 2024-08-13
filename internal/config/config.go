@@ -2,6 +2,9 @@ package config
 
 import (
 	"flag"
+	"log"
+	"os"
+	"strconv"
 )
 
 var options struct {
@@ -16,6 +19,28 @@ func ParseFlags() {
 	flag.Uint64Var(&options.reportIntervalSeconds, "r", 10, "report interval for sending metrics")
 
 	flag.Parse()
+
+	if envRunAddr := os.Getenv("ADDRESS"); envRunAddr != "" {
+		options.flagRunAddr = envRunAddr
+	}
+
+	if envPollIntervalSeconds := os.Getenv("POLL_INTERVAL"); envPollIntervalSeconds != "" {
+		value, err := strconv.ParseUint(envPollIntervalSeconds, 10, 64)
+
+		if err == nil {
+			options.pollIntervalSeconds = value
+		}
+	}
+
+	if envReportIntervalSeconds := os.Getenv("REPORT_INTERVAL"); envReportIntervalSeconds != "" {
+		value, err := strconv.ParseUint(envReportIntervalSeconds, 10, 64)
+
+		if err == nil {
+			options.reportIntervalSeconds = value
+		}
+	}
+
+	log.Print(os.Getenv("ADDRESS"))
 }
 
 func GetFlagRunAddr() string {
