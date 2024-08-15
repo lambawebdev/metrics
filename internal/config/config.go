@@ -2,7 +2,6 @@ package config
 
 import (
 	"flag"
-	"log"
 	"os"
 	"strconv"
 )
@@ -39,8 +38,6 @@ func ParseFlags() {
 			options.reportIntervalSeconds = value
 		}
 	}
-
-	log.Print(os.Getenv("ADDRESS"))
 }
 
 func GetFlagRunAddr() string {

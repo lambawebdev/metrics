@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,13 +36,11 @@ func TestGetMetrics(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, "/", nil)
-
 			storage := new(storage.MemStorage)
 			storage.Metrics = map[string]interface{}{"Alloc": 125}
 
 			w := httptest.NewRecorder()
-			GetMetrics(w, request, storage)
+			GetMetrics(w, storage)
 
 			res := w.Result()
 			assert.Equal(t, test.want.code, res.StatusCode)
@@ -215,8 +212,6 @@ func TestUpdateMetric(t *testing.T) {
 			assert.Equal(t, test.want.code, res.StatusCode)
 			defer res.Body.Close()
 			resBody, err := io.ReadAll(res.Body)
-
-			log.Print(storage)
 
 			require.NoError(t, err)
 			assert.Equal(t, test.want.responseText, string(resBody))

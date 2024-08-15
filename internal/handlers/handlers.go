@@ -13,12 +13,16 @@ import (
 	"github.com/lambawebdev/metrics/internal/validators"
 )
 
-func GetMetrics(res http.ResponseWriter, req *http.Request, storage *storage.MemStorage) {
+func GetMetrics(res http.ResponseWriter, storage *storage.MemStorage) {
 	metricsValues := storage.GetAll()
 
 	res.Header().Set("content-Type", "application/json")
 	res.WriteHeader(http.StatusOK)
-	json.NewEncoder(res).Encode(metricsValues)
+
+	if err := json.NewEncoder(res).Encode(metricsValues); err != nil {
+		http.Error(res, err.Error(), http.StatusBadRequest)
+		return
+	}
 }
 
 func GetMetric(res http.ResponseWriter, req *http.Request, storage *storage.MemStorage) {
@@ -27,8 +31,6 @@ func GetMetric(res http.ResponseWriter, req *http.Request, storage *storage.MemS
 
 	validators.ValidateMetricType(metricType, res)
 	metricValue := storage.GetMetricValue(metricName)
-
-	log.Print(metricValue)
 
 	if metricValue == nil {
 		http.Error(res, "Metric not exists!", http.StatusNotFound)

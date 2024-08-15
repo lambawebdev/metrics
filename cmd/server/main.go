@@ -17,8 +17,8 @@ func main() {
 	storage := new(storage.MemStorage)
 	storage.Metrics = make(map[string]interface{})
 
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		handlers.GetMetrics(w, r, storage)
+	r.Get("/", func(w http.ResponseWriter, _r *http.Request) {
+		handlers.GetMetrics(w, storage)
 	})
 
 	r.Get("/value/{type}/{name}", func(w http.ResponseWriter, r *http.Request) {

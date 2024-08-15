@@ -77,7 +77,7 @@ func NewMonitor(m *Monitor) {
 		m.Sys = rtm.Sys
 		m.TotalAlloc = rtm.TotalAlloc
 
-		m.PollCount += 1
+		m.PollCount++
 	}
 }
 
