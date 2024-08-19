@@ -39,7 +39,6 @@ func ValidateMetricName(metricType string, metricName string, res http.ResponseW
 }
 
 func ValidateMetricValue(metricType string, metricValue string, res http.ResponseWriter) {
-
 	if metricType == "gauge" {
 		_, err := strconv.ParseFloat(metricValue, 64)
 		if err != nil {
