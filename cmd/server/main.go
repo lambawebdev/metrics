@@ -6,31 +6,43 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lambawebdev/metrics/internal/config"
 	"github.com/lambawebdev/metrics/internal/handlers"
+	"github.com/lambawebdev/metrics/internal/logger"
 	"github.com/lambawebdev/metrics/internal/storage"
+	"go.uber.org/zap"
 )
 
 func main() {
-	config.ParseFlags()
-
 	r := chi.NewRouter()
 
 	storage := new(storage.MemStorage)
 	storage.Metrics = make(map[string]interface{})
 
-	r.Get("/", func(w http.ResponseWriter, _r *http.Request) {
+	r.Get("/", logger.WithLoggingMiddleware(func(w http.ResponseWriter, _r *http.Request) {
 		handlers.GetMetrics(w, storage)
-	})
+	}))
 
-	r.Get("/value/{type}/{name}", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/value/{type}/{name}", logger.WithLoggingMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		handlers.GetMetric(w, r, storage)
-	})
+	}))
 
-	r.Post("/update/{type}/{name}/{value}", func(w http.ResponseWriter, r *http.Request) {
+	r.Post("/update/{type}/{name}/{value}", logger.WithLoggingMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		handlers.UpdateMetric(w, r, storage)
-	})
+	}))
 
-	err := http.ListenAndServe(config.GetFlagRunAddr(), r)
+	err := run(r)
 	if err != nil {
 		panic(err)
 	}
+}
+
+func run(handler *chi.Mux) error {
+	config.ParseFlags()
+
+	if err := logger.Initialize("info"); err != nil {
+		return err
+	}
+
+	logger.Log.Info("Starting server", zap.String("address", config.GetFlagRunAddr()))
+
+	return http.ListenAndServe(config.GetFlagRunAddr(), handler)
 }
