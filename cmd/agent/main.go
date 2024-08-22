@@ -1,15 +1,20 @@
 package main
 
 import (
+	"fmt"
+
+	"github.com/lambawebdev/metrics/internal/agent/services/report"
 	"github.com/lambawebdev/metrics/internal/config"
-	"github.com/lambawebdev/metrics/internal/services/report"
 )
 
 func main() {
 	config.ParseFlags()
 
-	var m report.Monitor
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered from panic:", r)
+		}
+	}()
 
-	go report.NewMonitor(&m)
-	report.Report(&m)
+	report.Start()
 }

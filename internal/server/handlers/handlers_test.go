@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/lambawebdev/metrics/internal/storage"
+	"github.com/lambawebdev/metrics/internal/models"
+	"github.com/lambawebdev/metrics/internal/server/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -124,6 +127,80 @@ func TestGetMetric(t *testing.T) {
 	}
 }
 
+func TestGetMetricV2(t *testing.T) {
+	type want struct {
+		code         int
+		responseText string
+		contentType  string
+	}
+
+	tests := []struct {
+		name string
+		want want
+		body *models.Metrics
+	}{
+		{
+			name: "Test ok",
+			body: &models.Metrics{
+				ID:    "Alloc",
+				MType: "gauge",
+			},
+			want: want{
+				code:         200,
+				responseText: "{\"id\":\"Alloc\",\"type\":\"gauge\",\"value\":125.44}",
+				contentType:  "application/json",
+			},
+		},
+		{
+			name: "Test ok",
+			body: &models.Metrics{
+				ID:    "PollCount",
+				MType: "counter",
+			},
+			want: want{
+				code:         200,
+				responseText: "{\"id\":\"PollCount\",\"type\":\"counter\",\"delta\":0}",
+				contentType:  "application/json",
+			},
+		},
+		{
+			name: "Test RandomValue",
+			body: &models.Metrics{
+				ID:    "RandomValue",
+				MType: "gauge",
+			},
+			want: want{
+				code:         200,
+				responseText: "{\"id\":\"RandomValue\",\"type\":\"gauge\",\"value\":0}",
+				contentType:  "application/json",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body, _ := json.Marshal(test.body)
+			request := httptest.NewRequest(http.MethodPost, "/value/", bytes.NewBuffer(body))
+			request.Header.Set("Content-Type", "application/json")
+
+			storage := new(storage.MemStorage)
+			storage.Metrics = make(map[string]interface{})
+			storage.AddGauge("Alloc", 125.44)
+
+			w := httptest.NewRecorder()
+			GetMetricV2(w, request, storage)
+
+			res := w.Result()
+			assert.Equal(t, test.want.code, res.StatusCode)
+			defer res.Body.Close()
+			resBody, err := io.ReadAll(res.Body)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.want.responseText, string(resBody))
+			assert.Equal(t, test.want.contentType, res.Header.Get("Content-Type"))
+		})
+	}
+}
+
 func TestUpdateMetric(t *testing.T) {
 	type want struct {
 		code         int
@@ -207,6 +284,96 @@ func TestUpdateMetric(t *testing.T) {
 
 			w := httptest.NewRecorder()
 			UpdateMetric(w, request, storage)
+
+			res := w.Result()
+			assert.Equal(t, test.want.code, res.StatusCode)
+			defer res.Body.Close()
+			resBody, err := io.ReadAll(res.Body)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.want.responseText, string(resBody))
+			assert.Equal(t, test.want.contentType, res.Header.Get("Content-Type"))
+		})
+	}
+}
+
+func TestUpdateMetricV2(t *testing.T) {
+	type want struct {
+		code         int
+		responseText string
+		contentType  string
+	}
+
+	value1, delta1, delta2 := float64(222.22), int64(5), int64(155)
+
+	tests := []struct {
+		name string
+		want want
+		body *models.Metrics
+	}{
+		{
+			name: "Test update gauge",
+			body: &models.Metrics{
+				ID:    "Alloc",
+				MType: "gauge",
+				Value: &value1,
+			},
+			want: want{
+				code:         200,
+				responseText: "{\"id\":\"Alloc\",\"type\":\"gauge\",\"value\":222.22}",
+				contentType:  "application/json",
+			},
+		},
+		{
+			name: "Test update counter",
+			body: &models.Metrics{
+				ID:    "PollCount",
+				MType: "counter",
+				Delta: &delta1,
+			},
+			want: want{
+				code:         200,
+				responseText: "{\"id\":\"PollCount\",\"type\":\"counter\",\"delta\":5}",
+				contentType:  "application/json",
+			},
+		},
+		{
+			name: "Test wrong metric type",
+			body: &models.Metrics{
+				ID:    "Alloc",
+				MType: "wrongType",
+				Delta: &delta2,
+			},
+			want: want{
+				code:         400,
+				responseText: "Metric type is not supported!\n",
+				contentType:  "text/plain; charset=utf-8",
+			},
+		},
+		{
+			name: "Test value is not present",
+			body: &models.Metrics{
+				ID:    "PollCount",
+				MType: "counter",
+			},
+			want: want{
+				code:         400,
+				responseText: "delta have to be present\n",
+				contentType:  "text/plain; charset=utf-8",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body, _ := json.Marshal(test.body)
+			request := httptest.NewRequest(http.MethodPost, "/update/", bytes.NewBuffer(body))
+			request.Header.Set("Content-Type", "application/json")
+
+			storage := new(storage.MemStorage)
+			storage.Metrics = make(map[string]interface{})
+
+			w := httptest.NewRecorder()
+			UpdateMetricV2(w, request, storage)
 
 			res := w.Result()
 			assert.Equal(t, test.want.code, res.StatusCode)
