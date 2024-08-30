@@ -155,7 +155,10 @@ func sendMetric(metrics models.Metrics) error {
 
 	url := fmt.Sprintf("http://%s/update/", config.GetFlagRunAddr())
 
-	request := client.R().SetBody(body)
+	request := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("Content-Encoding", "gzip").
+		SetBody(body)
 
 	_, err = request.Post(url)
 	if err != nil {
