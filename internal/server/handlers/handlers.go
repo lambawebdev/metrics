@@ -14,7 +14,7 @@ import (
 func GetMetrics(res http.ResponseWriter, storage *storage.MemStorage) {
 	metricsValues := storage.GetAll()
 
-	res.Header().Set("content-Type", "application/json")
+	res.Header().Set("Content-Type", "text/html")
 	res.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(res).Encode(metricsValues); err != nil {

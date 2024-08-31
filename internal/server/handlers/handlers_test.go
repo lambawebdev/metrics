@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/lambawebdev/metrics/internal/models"
+	"github.com/lambawebdev/metrics/internal/server/middleware"
 	"github.com/lambawebdev/metrics/internal/server/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,7 +35,7 @@ func TestGetMetrics(t *testing.T) {
 				code:         200,
 				metricValue:  125,
 				responseText: `{"Alloc":125}`,
-				contentType:  "application/json",
+				contentType:  "text/html",
 			},
 		},
 	}
@@ -299,9 +301,10 @@ func TestUpdateMetric(t *testing.T) {
 
 func TestUpdateMetricV2(t *testing.T) {
 	type want struct {
-		code         int
-		responseText string
-		contentType  string
+		code           int
+		responseText   string
+		contentType    string
+		acceptEncoding string
 	}
 
 	value1, delta1, delta2 := float64(222.22), int64(5), int64(155)
@@ -319,9 +322,10 @@ func TestUpdateMetricV2(t *testing.T) {
 				Value: &value1,
 			},
 			want: want{
-				code:         200,
-				responseText: "{\"id\":\"Alloc\",\"type\":\"gauge\",\"value\":222.22}",
-				contentType:  "application/json",
+				code:           200,
+				responseText:   "{\"id\":\"Alloc\",\"type\":\"gauge\",\"value\":222.22}",
+				contentType:    "application/json",
+				acceptEncoding: "gzip",
 			},
 		},
 		{
@@ -332,9 +336,10 @@ func TestUpdateMetricV2(t *testing.T) {
 				Delta: &delta1,
 			},
 			want: want{
-				code:         200,
-				responseText: "{\"id\":\"PollCount\",\"type\":\"counter\",\"delta\":5}",
-				contentType:  "application/json",
+				code:           200,
+				responseText:   "{\"id\":\"PollCount\",\"type\":\"counter\",\"delta\":5}",
+				contentType:    "application/json",
+				acceptEncoding: "gzip",
 			},
 		},
 		{
@@ -345,9 +350,10 @@ func TestUpdateMetricV2(t *testing.T) {
 				Delta: &delta2,
 			},
 			want: want{
-				code:         400,
-				responseText: "Metric type is not supported!\n",
-				contentType:  "text/plain; charset=utf-8",
+				code:           400,
+				responseText:   "Metric type is not supported!\n",
+				contentType:    "text/plain; charset=utf-8",
+				acceptEncoding: "gzip",
 			},
 		},
 		{
@@ -357,32 +363,48 @@ func TestUpdateMetricV2(t *testing.T) {
 				MType: "counter",
 			},
 			want: want{
-				code:         400,
-				responseText: "delta have to be present\n",
-				contentType:  "text/plain; charset=utf-8",
+				code:           400,
+				responseText:   "delta have to be present\n",
+				contentType:    "text/plain; charset=utf-8",
+				acceptEncoding: "gzip",
 			},
 		},
 	}
+
+	storage := new(storage.MemStorage)
+	storage.Metrics = make(map[string]interface{})
+
+	handler := http.HandlerFunc(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		UpdateMetricV2(w, r, storage)
+	}))
+
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body, _ := json.Marshal(test.body)
-			request := httptest.NewRequest(http.MethodPost, "/update/", bytes.NewBuffer(body))
+			request := httptest.NewRequest(http.MethodPost, srv.URL, bytes.NewBuffer(body))
+			request.RequestURI = ""
 			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Accept-Encoding", "gzip")
 
-			storage := new(storage.MemStorage)
-			storage.Metrics = make(map[string]interface{})
+			res, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
 
-			w := httptest.NewRecorder()
-			UpdateMetricV2(w, request, storage)
-
-			res := w.Result()
-			assert.Equal(t, test.want.code, res.StatusCode)
 			defer res.Body.Close()
-			resBody, err := io.ReadAll(res.Body)
+
+			zr, err := gzip.NewReader(res.Body)
+			require.NoError(t, err)
+
+			body, err = io.ReadAll(zr)
+			require.NoError(t, err)
 
 			require.NoError(t, err)
-			assert.Equal(t, test.want.responseText, string(resBody))
+			assert.Equal(t, test.want.responseText, string(body))
 			assert.Equal(t, test.want.contentType, res.Header.Get("Content-Type"))
+			assert.Equal(t, test.want.acceptEncoding, res.Header.Get("Content-Encoding"))
+
 		})
 	}
 }

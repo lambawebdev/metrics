@@ -7,6 +7,7 @@ import (
 	"github.com/lambawebdev/metrics/internal/config"
 	"github.com/lambawebdev/metrics/internal/server/handlers"
 	"github.com/lambawebdev/metrics/internal/server/logger"
+	"github.com/lambawebdev/metrics/internal/server/middleware"
 	"github.com/lambawebdev/metrics/internal/server/storage"
 	"go.uber.org/zap"
 )
@@ -17,25 +18,25 @@ func main() {
 	storage := new(storage.MemStorage)
 	storage.Metrics = make(map[string]interface{})
 
-	r.Get("/", logger.WithLoggingMiddleware(func(w http.ResponseWriter, _r *http.Request) {
+	r.Get("/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, _r *http.Request) {
 		handlers.GetMetrics(w, storage)
-	}))
+	})))
 
-	r.Post("/value/", logger.WithLoggingMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	r.Post("/value/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		handlers.GetMetricV2(w, r, storage)
-	}))
+	})))
 
-	r.Get("/value/{type}/{name}", logger.WithLoggingMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/value/{type}/{name}", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		handlers.GetMetric(w, r, storage)
-	}))
+	})))
 
-	r.Post("/update/", logger.WithLoggingMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	r.Post("/update/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		handlers.UpdateMetricV2(w, r, storage)
-	}))
+	})))
 
-	r.Post("/update/{type}/{name}/{value}", logger.WithLoggingMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	r.Post("/update/{type}/{name}/{value}", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		handlers.UpdateMetric(w, r, storage)
-	}))
+	})))
 
 	err := run(r)
 	if err != nil {
