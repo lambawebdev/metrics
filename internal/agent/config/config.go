@@ -25,7 +25,6 @@ func ParseFlags() {
 
 	if envPollIntervalSeconds := os.Getenv("POLL_INTERVAL"); envPollIntervalSeconds != "" {
 		value, err := strconv.ParseUint(envPollIntervalSeconds, 10, 64)
-
 		if err == nil {
 			options.pollIntervalSeconds = value
 		}
@@ -33,7 +32,6 @@ func ParseFlags() {
 
 	if envReportIntervalSeconds := os.Getenv("REPORT_INTERVAL"); envReportIntervalSeconds != "" {
 		value, err := strconv.ParseUint(envReportIntervalSeconds, 10, 64)
-
 		if err == nil {
 			options.reportIntervalSeconds = value
 		}

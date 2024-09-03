@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strconv"
 
 	"github.com/lambawebdev/metrics/internal/models"
@@ -11,8 +12,43 @@ import (
 	"github.com/lambawebdev/metrics/internal/validators"
 )
 
-func GetMetrics(res http.ResponseWriter, storage *storage.MemStorage) {
-	metricsValues := storage.GetAll()
+type MetricHandler struct {
+	memStorage *storage.MemStorage
+}
+
+type MetricHandlerInterface interface {
+	GetMetric(res http.ResponseWriter, req *http.Request)
+	GetMetricV2(res http.ResponseWriter, req *http.Request)
+	GetMetrics(res http.ResponseWriter)
+	UpdateMetric(res http.ResponseWriter, req *http.Request)
+	UpdateMetricV2(res http.ResponseWriter, req *http.Request)
+}
+
+func NewMetricHandler(memStorage *storage.MemStorage) *MetricHandler {
+	return &MetricHandler{
+		memStorage: memStorage,
+	}
+}
+
+func (mh *MetricHandler) GetMetric(res http.ResponseWriter, req *http.Request) {
+	metricType := req.PathValue("type")
+	metricName := req.PathValue("name")
+
+	validators.ValidateMetricType(metricType, res)
+	metricValue := mh.memStorage.GetMetricValue(metricName)
+
+	if metricValue == nil {
+		http.Error(res, "Metric not exists!", http.StatusNotFound)
+		return
+	}
+
+	res.Header().Set("content-Type", "application/json")
+	res.WriteHeader(http.StatusOK)
+	json.NewEncoder(res).Encode(metricValue)
+}
+
+func (mh *MetricHandler) GetMetrics(res http.ResponseWriter) {
+	metricsValues := mh.memStorage.GetAll()
 
 	res.Header().Set("Content-Type", "text/html")
 	res.WriteHeader(http.StatusOK)
@@ -23,12 +59,12 @@ func GetMetrics(res http.ResponseWriter, storage *storage.MemStorage) {
 	}
 }
 
-func GetMetricV2(res http.ResponseWriter, req *http.Request, storage *storage.MemStorage) {
+func (mh *MetricHandler) GetMetricV2(res http.ResponseWriter, req *http.Request) {
 	var m models.Metrics
 	var buf bytes.Buffer
 
-	tempValue := float64(0)
-	tempDelta := int64(0)
+	defValue := float64(0)
+	defDelta := int64(0)
 
 	_, err := buf.ReadFrom(req.Body)
 	if err != nil {
@@ -41,25 +77,39 @@ func GetMetricV2(res http.ResponseWriter, req *http.Request, storage *storage.Me
 		return
 	}
 
-	metricValue := storage.GetMetricValue(m.ID)
+	metricValue := mh.memStorage.GetMetricValue(m.ID)
 
 	if metricValue == nil && m.MType == "gauge" {
-		m.Value = &tempValue
+		m.Value = &defValue
 	}
 
 	if metricValue == nil && m.MType == "counter" {
-		m.Delta = &tempDelta
+		m.Delta = &defDelta
 	}
 
 	if metricValue != nil {
 		if m.MType == "gauge" {
-			value := metricValue.(float64)
-			m.Value = &value
+			if reflect.TypeOf(metricValue).Kind() == reflect.Float64 {
+				defValue = float64(metricValue.(float64))
+			}
+
+			if reflect.TypeOf(metricValue).Kind() == reflect.Int64 {
+				defValue = float64(metricValue.(int64))
+			}
+
+			m.Value = &defValue
 		}
 
 		if m.MType == "counter" {
-			value := metricValue.(int64)
-			m.Delta = &value
+			if reflect.TypeOf(metricValue).Kind() == reflect.Float64 {
+				defDelta = int64(metricValue.(float64))
+			}
+
+			if reflect.TypeOf(metricValue).Kind() == reflect.Int64 {
+				defDelta = int64(metricValue.(int64))
+			}
+
+			m.Delta = &defDelta
 		}
 	}
 
@@ -74,24 +124,7 @@ func GetMetricV2(res http.ResponseWriter, req *http.Request, storage *storage.Me
 	res.Write(resp)
 }
 
-func GetMetric(res http.ResponseWriter, req *http.Request, storage *storage.MemStorage) {
-	metricType := req.PathValue("type")
-	metricName := req.PathValue("name")
-
-	validators.ValidateMetricType(metricType, res)
-	metricValue := storage.GetMetricValue(metricName)
-
-	if metricValue == nil {
-		http.Error(res, "Metric not exists!", http.StatusNotFound)
-		return
-	}
-
-	res.Header().Set("content-Type", "application/json")
-	res.WriteHeader(http.StatusOK)
-	json.NewEncoder(res).Encode(metricValue)
-}
-
-func UpdateMetric(res http.ResponseWriter, req *http.Request, storage *storage.MemStorage) {
+func (mh *MetricHandler) UpdateMetric(res http.ResponseWriter, req *http.Request) {
 	metricType := req.PathValue("type")
 	metricName := req.PathValue("name")
 	metricValue := req.PathValue("value")
@@ -101,19 +134,19 @@ func UpdateMetric(res http.ResponseWriter, req *http.Request, storage *storage.M
 
 	if metricType == "gauge" {
 		value, _ := strconv.ParseFloat(metricValue, 64)
-		storage.AddGauge(metricName, value)
+		mh.memStorage.AddGauge(metricName, value)
 	}
 
 	if metricType == "counter" {
 		value, _ := strconv.ParseInt(metricValue, 10, 64)
-		storage.AddCounter(metricName, value)
+		mh.memStorage.AddCounter(metricName, value)
 	}
 
 	res.Header().Set("content-Type", "text/plain; charset=utf-8")
 	res.WriteHeader(http.StatusOK)
 }
 
-func UpdateMetricV2(res http.ResponseWriter, req *http.Request, storage *storage.MemStorage) {
+func (mh *MetricHandler) UpdateMetricV2(res http.ResponseWriter, req *http.Request) {
 	var m models.Metrics
 	var buf bytes.Buffer
 
@@ -138,7 +171,7 @@ func UpdateMetricV2(res http.ResponseWriter, req *http.Request, storage *storage
 			return
 		}
 
-		storage.AddGauge(m.ID, *m.Value)
+		mh.memStorage.AddGauge(m.ID, *m.Value)
 	}
 
 	if m.MType == "counter" {
@@ -146,7 +179,7 @@ func UpdateMetricV2(res http.ResponseWriter, req *http.Request, storage *storage
 			http.Error(res, "delta have to be present", http.StatusBadRequest)
 			return
 		}
-		storage.AddCounter(m.ID, *m.Delta)
+		mh.memStorage.AddCounter(m.ID, *m.Delta)
 	}
 
 	resp, err := json.Marshal(m)

@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/lambawebdev/metrics/internal/config"
+	"github.com/lambawebdev/metrics/internal/server/config"
 	"github.com/lambawebdev/metrics/internal/server/handlers"
 	"github.com/lambawebdev/metrics/internal/server/logger"
 	"github.com/lambawebdev/metrics/internal/server/middleware"
@@ -13,29 +13,32 @@ import (
 )
 
 func main() {
-	r := chi.NewRouter()
+	config.ParseFlags()
 
-	storage := new(storage.MemStorage)
-	storage.Metrics = make(map[string]interface{})
+	r := chi.NewRouter()
+	s := storage.InitMemStorage()
+	mh := handlers.NewMetricHandler(s)
+
+	go storage.StartToWrite(s, config.GetStoreIntervalSeconds())
 
 	r.Get("/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, _r *http.Request) {
-		handlers.GetMetrics(w, storage)
+		mh.GetMetrics(w)
 	})))
 
 	r.Post("/value/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		handlers.GetMetricV2(w, r, storage)
+		mh.GetMetricV2(w, r)
 	})))
 
 	r.Get("/value/{type}/{name}", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		handlers.GetMetric(w, r, storage)
+		mh.GetMetric(w, r)
 	})))
 
 	r.Post("/update/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		handlers.UpdateMetricV2(w, r, storage)
+		mh.UpdateMetricV2(w, r)
 	})))
 
 	r.Post("/update/{type}/{name}/{value}", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		handlers.UpdateMetric(w, r, storage)
+		mh.UpdateMetric(w, r)
 	})))
 
 	err := run(r)
@@ -45,8 +48,6 @@ func main() {
 }
 
 func run(handler *chi.Mux) error {
-	config.ParseFlags()
-
 	if err := logger.Initialize("info"); err != nil {
 		return err
 	}

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/lambawebdev/metrics/internal/config"
+	"github.com/lambawebdev/metrics/internal/agent/config"
 	"github.com/lambawebdev/metrics/internal/models"
 	"github.com/lambawebdev/metrics/internal/validators"
 )
@@ -46,7 +46,7 @@ type Monitor struct {
 	RandomValue   uint64
 }
 
-func Start() error {
+func Start() {
 	var m Monitor
 
 	pollTicker := time.NewTicker(time.Duration(config.GetFlagPollIntervalSeconds()) * time.Second)

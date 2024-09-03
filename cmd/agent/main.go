@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
+	"github.com/lambawebdev/metrics/internal/agent/config"
 	"github.com/lambawebdev/metrics/internal/agent/services/report"
-	"github.com/lambawebdev/metrics/internal/config"
 )
 
 func main() {

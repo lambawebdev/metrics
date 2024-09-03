@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/lambawebdev/metrics/internal/models"
+	"github.com/lambawebdev/metrics/internal/server/config"
 	"github.com/lambawebdev/metrics/internal/server/middleware"
 	"github.com/lambawebdev/metrics/internal/server/storage"
 	"github.com/stretchr/testify/assert"
@@ -26,11 +27,13 @@ func TestGetMetrics(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		want want
+		name         string
+		readFromFile bool
+		want         want
 	}{
 		{
-			name: "Test ok",
+			name:         "Test ok",
+			readFromFile: false,
 			want: want{
 				code:         200,
 				metricValue:  125,
@@ -43,9 +46,10 @@ func TestGetMetrics(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			storage := new(storage.MemStorage)
 			storage.Metrics = map[string]interface{}{"Alloc": 125}
+			mh := NewMetricHandler(storage)
 
 			w := httptest.NewRecorder()
-			GetMetrics(w, storage)
+			mh.GetMetrics(w)
 
 			res := w.Result()
 			assert.Equal(t, test.want.code, res.StatusCode)
@@ -113,9 +117,10 @@ func TestGetMetric(t *testing.T) {
 
 			storage := new(storage.MemStorage)
 			storage.Metrics = map[string]interface{}{"Alloc": 125}
+			h := NewMetricHandler(storage)
 
 			w := httptest.NewRecorder()
-			GetMetric(w, request, storage)
+			h.GetMetric(w, request)
 
 			res := w.Result()
 			assert.Equal(t, test.want.code, res.StatusCode)
@@ -137,12 +142,14 @@ func TestGetMetricV2(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		want want
-		body *models.Metrics
+		name         string
+		readFromFile bool
+		want         want
+		body         *models.Metrics
 	}{
 		{
-			name: "Test ok",
+			name:         "Test ok",
+			readFromFile: false,
 			body: &models.Metrics{
 				ID:    "Alloc",
 				MType: "gauge",
@@ -154,7 +161,8 @@ func TestGetMetricV2(t *testing.T) {
 			},
 		},
 		{
-			name: "Test ok",
+			name:         "Test ok",
+			readFromFile: false,
 			body: &models.Metrics{
 				ID:    "PollCount",
 				MType: "counter",
@@ -166,7 +174,8 @@ func TestGetMetricV2(t *testing.T) {
 			},
 		},
 		{
-			name: "Test RandomValue",
+			name:         "Test RandomValue",
+			readFromFile: false,
 			body: &models.Metrics{
 				ID:    "RandomValue",
 				MType: "gauge",
@@ -177,19 +186,75 @@ func TestGetMetricV2(t *testing.T) {
 				contentType:  "application/json",
 			},
 		},
+		{
+			name:         "Test read from file when gauge value not present",
+			readFromFile: true,
+			body: &models.Metrics{
+				ID:    "RandomValue",
+				MType: "gauge",
+			},
+			want: want{
+				code:         200,
+				responseText: "{\"id\":\"RandomValue\",\"type\":\"gauge\",\"value\":0}",
+				contentType:  "application/json",
+			},
+		},
+		{
+			name:         "Test read from file when counter value not present",
+			readFromFile: true,
+			body: &models.Metrics{
+				ID:    "RandomValue",
+				MType: "counter",
+			},
+			want: want{
+				code:         200,
+				responseText: "{\"id\":\"RandomValue\",\"type\":\"counter\",\"delta\":0}",
+				contentType:  "application/json",
+			},
+		},
+		{
+			name:         "Test read from file when gauge value present",
+			readFromFile: true,
+			body: &models.Metrics{
+				ID:    "Alloc",
+				MType: "gauge",
+			},
+			want: want{
+				code:         200,
+				responseText: "{\"id\":\"Alloc\",\"type\":\"gauge\",\"value\":125.44}",
+				contentType:  "application/json",
+			},
+		},
+		{
+			name:         "Test read from file when not exists metric set",
+			readFromFile: true,
+			body: &models.Metrics{
+				ID:    "GetSetZip",
+				MType: "counter",
+			},
+			want: want{
+				code:         200,
+				responseText: "{\"id\":\"GetSetZip\",\"type\":\"counter\",\"delta\":0}",
+				contentType:  "application/json",
+			},
+		},
 	}
+
+	config.ParseFlags()
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body, _ := json.Marshal(test.body)
 			request := httptest.NewRequest(http.MethodPost, "/value/", bytes.NewBuffer(body))
 			request.Header.Set("Content-Type", "application/json")
 
-			storage := new(storage.MemStorage)
-			storage.Metrics = make(map[string]interface{})
-			storage.AddGauge("Alloc", 125.44)
+			s := new(storage.MemStorage)
+			s.Metrics = make(map[string]interface{})
+			s.AddGauge("Alloc", 125.44)
+			mh := NewMetricHandler(s)
+			config.SetRestoreMetrics(test.readFromFile)
 
 			w := httptest.NewRecorder()
-			GetMetricV2(w, request, storage)
+			mh.GetMetricV2(w, request)
 
 			res := w.Result()
 			assert.Equal(t, test.want.code, res.StatusCode)
@@ -285,7 +350,8 @@ func TestUpdateMetric(t *testing.T) {
 			storage.Metrics = make(map[string]interface{})
 
 			w := httptest.NewRecorder()
-			UpdateMetric(w, request, storage)
+			mh := NewMetricHandler(storage)
+			mh.UpdateMetric(w, request)
 
 			res := w.Result()
 			assert.Equal(t, test.want.code, res.StatusCode)
@@ -373,9 +439,10 @@ func TestUpdateMetricV2(t *testing.T) {
 
 	storage := new(storage.MemStorage)
 	storage.Metrics = make(map[string]interface{})
+	mh := NewMetricHandler(storage)
 
 	handler := http.HandlerFunc(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		UpdateMetricV2(w, r, storage)
+		mh.UpdateMetricV2(w, r)
 	}))
 
 	srv := httptest.NewServer(handler)
@@ -404,7 +471,6 @@ func TestUpdateMetricV2(t *testing.T) {
 			assert.Equal(t, test.want.responseText, string(body))
 			assert.Equal(t, test.want.contentType, res.Header.Get("Content-Type"))
 			assert.Equal(t, test.want.acceptEncoding, res.Header.Get("Content-Encoding"))
-
 		})
 	}
 }
