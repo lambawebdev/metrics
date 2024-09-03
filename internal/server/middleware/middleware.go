@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"io"
 	"net/http"
-	"slices"
 	"strings"
 )
 
@@ -20,11 +19,6 @@ func (w gzipWriter) Write(b []byte) (int, error) {
 func GzipMiddleware(h http.HandlerFunc) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			h.ServeHTTP(w, r)
-			return
-		}
-
-		if !slices.Contains([]string{"application/json", "text/html"}, r.Header.Get("Content-Type")) {
 			h.ServeHTTP(w, r)
 			return
 		}
