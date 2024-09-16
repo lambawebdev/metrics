@@ -4,33 +4,55 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/lambawebdev/metrics/internal/config"
-	"github.com/lambawebdev/metrics/internal/handlers"
-	"github.com/lambawebdev/metrics/internal/storage"
+	"github.com/lambawebdev/metrics/internal/server/config"
+	"github.com/lambawebdev/metrics/internal/server/handlers"
+	"github.com/lambawebdev/metrics/internal/server/logger"
+	"github.com/lambawebdev/metrics/internal/server/middleware"
+	"github.com/lambawebdev/metrics/internal/server/storage"
+	"go.uber.org/zap"
 )
 
 func main() {
 	config.ParseFlags()
 
 	r := chi.NewRouter()
+	s := storage.InitMemStorage()
+	mh := handlers.NewMetricHandler(s)
 
-	storage := new(storage.MemStorage)
-	storage.Metrics = make(map[string]interface{})
+	go storage.StartToWrite(s, config.GetStoreIntervalSeconds())
 
-	r.Get("/", func(w http.ResponseWriter, _r *http.Request) {
-		handlers.GetMetrics(w, storage)
-	})
+	r.Get("/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, _r *http.Request) {
+		mh.GetMetrics(w)
+	})))
 
-	r.Get("/value/{type}/{name}", func(w http.ResponseWriter, r *http.Request) {
-		handlers.GetMetric(w, r, storage)
-	})
+	r.Post("/value/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		mh.GetMetricV2(w, r)
+	})))
 
-	r.Post("/update/{type}/{name}/{value}", func(w http.ResponseWriter, r *http.Request) {
-		handlers.UpdateMetric(w, r, storage)
-	})
+	r.Get("/value/{type}/{name}", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		mh.GetMetric(w, r)
+	})))
 
-	err := http.ListenAndServe(config.GetFlagRunAddr(), r)
+	r.Post("/update/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		mh.UpdateMetricV2(w, r)
+	})))
+
+	r.Post("/update/{type}/{name}/{value}", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		mh.UpdateMetric(w, r)
+	})))
+
+	err := run(r)
 	if err != nil {
 		panic(err)
 	}
+}
+
+func run(handler *chi.Mux) error {
+	if err := logger.Initialize("info"); err != nil {
+		return err
+	}
+
+	logger.Log.Info("Starting server", zap.String("address", config.GetFlagRunAddr()))
+
+	return http.ListenAndServe(config.GetFlagRunAddr(), handler)
 }

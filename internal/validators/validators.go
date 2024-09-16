@@ -18,24 +18,26 @@ func TypesMetrics() map[string][]string {
 			"HeapReleased", "HeapSys", "LastGC", "Lookups", "MCacheInuse",
 			"MCacheSys", "MSpanInuse", "MSpanSys", "Mallocs", "NextGC",
 			"NumForcedGC", "NumGC", "OtherSys", "PauseTotalNs",
-			"StackInuse", "StackSys", "Sys", "TotalAlloc",
+			"StackInuse", "StackSys", "Sys", "TotalAlloc", "RandomValue",
 		},
 		"counter": []string{"PollCount"},
 	}
 }
 
-func ValidateMetricType(metricType string, res http.ResponseWriter) {
+func ValidateMetricType(metricType string, res http.ResponseWriter) bool {
 	if !slices.Contains(allowedMetricTypes(), metricType) {
 		http.Error(res, "Metric type is not supported!", http.StatusBadRequest)
-		return
+		return false
 	}
+	return true
 }
 
-func ValidateMetricName(metricType string, metricName string, res http.ResponseWriter) {
+func ValidateMetricName(metricType string, metricName string, res http.ResponseWriter) bool {
 	if !slices.Contains(TypesMetrics()[metricType], metricName) {
 		http.Error(res, "Metric not exists!", http.StatusNotFound)
-		return
+		return false
 	}
+	return true
 }
 
 func ValidateMetricValue(metricType string, metricValue string, res http.ResponseWriter) {
