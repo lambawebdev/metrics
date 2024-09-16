@@ -3,7 +3,10 @@ package main
 import (
 	"net/http"
 
+	"database/sql"
+
 	"github.com/go-chi/chi/v5"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/lambawebdev/metrics/internal/server/config"
 	"github.com/lambawebdev/metrics/internal/server/handlers"
 	"github.com/lambawebdev/metrics/internal/server/logger"
@@ -15,11 +18,21 @@ import (
 func main() {
 	config.ParseFlags()
 
+	db, err := sql.Open("pgx", config.GetDatabaseDsn())
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
 	r := chi.NewRouter()
 	s := storage.InitMemStorage()
 	mh := handlers.NewMetricHandler(s)
 
 	go storage.StartToWrite(s, config.GetStoreIntervalSeconds())
+
+	r.Get("/ping", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, _r *http.Request) {
+		mh.Ping(w, db)
+	})))
 
 	r.Get("/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, _r *http.Request) {
 		mh.GetMetrics(w)
@@ -41,7 +54,7 @@ func main() {
 		mh.UpdateMetric(w, r)
 	})))
 
-	err := run(r)
+	err = run(r)
 	if err != nil {
 		panic(err)
 	}

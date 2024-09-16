@@ -11,6 +11,7 @@ var options struct {
 	storeIntervalSeconds uint64
 	fileStoragePath      string
 	restoreMetrics       bool
+	databaseDsn          string
 }
 
 func ParseFlags() {
@@ -18,6 +19,7 @@ func ParseFlags() {
 	flag.Uint64Var(&options.storeIntervalSeconds, "i", 300, "save metrics after interval seconds")
 	flag.StringVar(&options.fileStoragePath, "f", "/tmp/storage", "file storage path")
 	flag.BoolVar(&options.restoreMetrics, "r", true, "if true - metrics will be loaded from file")
+	flag.StringVar(&options.databaseDsn, "d", "host=localhost user=test password=password dbname=videos sslmode=disable", "pgsql data source name")
 
 	flag.Parse()
 
@@ -42,6 +44,10 @@ func ParseFlags() {
 			options.restoreMetrics = value
 		}
 	}
+
+	if databaseDsn := os.Getenv("DATABASE_DSN"); databaseDsn != "" {
+		options.databaseDsn = databaseDsn
+	}
 }
 
 func GetFlagRunAddr() string {
@@ -62,4 +68,8 @@ func GetRestoreMetrics() bool {
 
 func SetRestoreMetrics(bool bool) {
 	options.restoreMetrics = bool
+}
+
+func GetDatabaseDsn() string {
+	return options.databaseDsn
 }

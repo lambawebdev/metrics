@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"reflect"
@@ -22,6 +23,7 @@ type MetricHandlerInterface interface {
 	GetMetrics(res http.ResponseWriter)
 	UpdateMetric(res http.ResponseWriter, req *http.Request)
 	UpdateMetricV2(res http.ResponseWriter, req *http.Request)
+	Ping(res http.ResponseWriter, db *sql.DB)
 }
 
 func NewMetricHandler(memStorage *storage.MemStorage) *MetricHandler {
@@ -192,4 +194,12 @@ func (mh *MetricHandler) UpdateMetricV2(res http.ResponseWriter, req *http.Reque
 	res.Header().Set("Content-Type", "application/json")
 	res.WriteHeader(http.StatusOK)
 	res.Write(resp)
+}
+
+func (mh *MetricHandler) Ping(res http.ResponseWriter, db *sql.DB) {
+	if err := db.Ping(); err != nil {
+		http.Error(res, err.Error(), http.StatusInternalServerError)
+	}
+
+	res.WriteHeader(http.StatusOK)
 }
