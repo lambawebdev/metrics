@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"os"
 
 	"database/sql"
 
@@ -25,10 +26,19 @@ func main() {
 	defer db.Close()
 
 	r := chi.NewRouter()
-	s := storage.InitMemStorage()
-	mh := handlers.NewMetricHandler(s)
+
+	s, err := storage.GetStorageFactory(db)
+	if err != nil {
+		panic(err)
+	}
 
 	go storage.StartToWrite(s, config.GetStoreIntervalSeconds())
+
+	if databaseDsn := os.Getenv("DATABASE_DSN"); databaseDsn != "" {
+		createMetricsTable(db)
+	}
+
+	mh := handlers.NewMetricHandler(s)
 
 	r.Get("/ping", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, _r *http.Request) {
 		mh.Ping(w, db)
@@ -68,4 +78,45 @@ func run(handler *chi.Mux) error {
 	logger.Log.Info("Starting server", zap.String("address", config.GetFlagRunAddr()))
 
 	return http.ListenAndServe(config.GetFlagRunAddr(), handler)
+}
+
+func createGaugeMetrics(db *sql.DB) {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS gauge_metrics (
+	    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
+		name VARCHAR(30) UNIQUE,
+		value double precision
+		);
+	`)
+
+	if err != nil {
+		panic(err)
+	}
+}
+
+func createCounterMetrics(db *sql.DB) {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS counter_metrics (
+	    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
+		name VARCHAR(30) UNIQUE,
+		value INTEGER
+		);
+	`)
+
+	if err != nil {
+		panic(err)
+	}
+}
+
+func createMetricsTable(db *sql.DB) {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS metrics (
+	    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
+		name VARCHAR(30) UNIQUE,
+		type VARCHAR(30),
+		delta INTEGER,
+	    value double precision
+		);
+	`)
+
+	if err != nil {
+		panic(err)
+	}
 }

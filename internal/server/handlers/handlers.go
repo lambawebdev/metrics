@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"reflect"
 	"strconv"
 
 	"github.com/lambawebdev/metrics/internal/models"
@@ -14,7 +13,7 @@ import (
 )
 
 type MetricHandler struct {
-	memStorage *storage.MemStorage
+	storage storage.MetricStorage
 }
 
 type MetricHandlerInterface interface {
@@ -26,9 +25,9 @@ type MetricHandlerInterface interface {
 	Ping(res http.ResponseWriter, db *sql.DB)
 }
 
-func NewMetricHandler(memStorage *storage.MemStorage) *MetricHandler {
+func NewMetricHandler(storage storage.MetricStorage) *MetricHandler {
 	return &MetricHandler{
-		memStorage: memStorage,
+		storage: storage,
 	}
 }
 
@@ -37,20 +36,30 @@ func (mh *MetricHandler) GetMetric(res http.ResponseWriter, req *http.Request) {
 	metricName := req.PathValue("name")
 
 	validators.ValidateMetricType(metricType, res)
-	metricValue := mh.memStorage.GetMetricValue(metricName)
+	metric, found := mh.storage.GetMetric(metricName, metricType)
 
-	if metricValue == nil {
+	if !found {
 		http.Error(res, "Metric not exists!", http.StatusNotFound)
 		return
 	}
 
+	var value interface{}
+
+	if metricType == "gauge" {
+		value = metric.Value
+	}
+
+	if metricType == "counter" {
+		value = metric.Delta
+	}
+
 	res.Header().Set("content-Type", "application/json")
 	res.WriteHeader(http.StatusOK)
-	json.NewEncoder(res).Encode(metricValue)
+	json.NewEncoder(res).Encode(value)
 }
 
 func (mh *MetricHandler) GetMetrics(res http.ResponseWriter) {
-	metricsValues := mh.memStorage.GetAll()
+	metricsValues := mh.storage.GetAll()
 
 	res.Header().Set("Content-Type", "text/html")
 	res.WriteHeader(http.StatusOK)
@@ -65,9 +74,6 @@ func (mh *MetricHandler) GetMetricV2(res http.ResponseWriter, req *http.Request)
 	var m models.Metrics
 	var buf bytes.Buffer
 
-	defValue := float64(0)
-	defDelta := int64(0)
-
 	_, err := buf.ReadFrom(req.Body)
 	if err != nil {
 		http.Error(res, err.Error(), http.StatusBadRequest)
@@ -79,41 +85,7 @@ func (mh *MetricHandler) GetMetricV2(res http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	metricValue := mh.memStorage.GetMetricValue(m.ID)
-
-	if metricValue == nil && m.MType == "gauge" {
-		m.Value = &defValue
-	}
-
-	if metricValue == nil && m.MType == "counter" {
-		m.Delta = &defDelta
-	}
-
-	if metricValue != nil {
-		if m.MType == "gauge" {
-			if reflect.TypeOf(metricValue).Kind() == reflect.Float64 {
-				defValue = float64(metricValue.(float64))
-			}
-
-			if reflect.TypeOf(metricValue).Kind() == reflect.Int64 {
-				defValue = float64(metricValue.(int64))
-			}
-
-			m.Value = &defValue
-		}
-
-		if m.MType == "counter" {
-			if reflect.TypeOf(metricValue).Kind() == reflect.Float64 {
-				defDelta = int64(metricValue.(float64))
-			}
-
-			if reflect.TypeOf(metricValue).Kind() == reflect.Int64 {
-				defDelta = int64(metricValue.(int64))
-			}
-
-			m.Delta = &defDelta
-		}
-	}
+	m, _ = mh.storage.GetMetric(m.ID, m.MType)
 
 	resp, err := json.Marshal(m)
 	if err != nil {
@@ -136,12 +108,12 @@ func (mh *MetricHandler) UpdateMetric(res http.ResponseWriter, req *http.Request
 
 	if metricType == "gauge" {
 		value, _ := strconv.ParseFloat(metricValue, 64)
-		mh.memStorage.AddGauge(metricName, value)
+		mh.storage.AddGauge(metricName, value)
 	}
 
 	if metricType == "counter" {
 		value, _ := strconv.ParseInt(metricValue, 10, 64)
-		mh.memStorage.AddCounter(metricName, value)
+		mh.storage.AddCounter(metricName, value)
 	}
 
 	res.Header().Set("content-Type", "text/plain; charset=utf-8")
@@ -173,7 +145,7 @@ func (mh *MetricHandler) UpdateMetricV2(res http.ResponseWriter, req *http.Reque
 			return
 		}
 
-		mh.memStorage.AddGauge(m.ID, *m.Value)
+		mh.storage.AddGauge(m.ID, *m.Value)
 	}
 
 	if m.MType == "counter" {
@@ -181,7 +153,7 @@ func (mh *MetricHandler) UpdateMetricV2(res http.ResponseWriter, req *http.Reque
 			http.Error(res, "delta have to be present", http.StatusBadRequest)
 			return
 		}
-		mh.memStorage.AddCounter(m.ID, *m.Delta)
+		mh.storage.AddCounter(m.ID, *m.Delta)
 	}
 
 	resp, err := json.Marshal(m)
