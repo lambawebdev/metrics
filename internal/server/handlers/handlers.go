@@ -88,6 +88,7 @@ func (mh *MetricHandler) GetMetricV2(res http.ResponseWriter, req *http.Request)
 	m, _ = mh.storage.GetMetric(m.ID, m.MType)
 
 	resp, err := json.Marshal(m)
+
 	if err != nil {
 		http.Error(res, err.Error(), http.StatusInternalServerError)
 		return
@@ -173,5 +174,27 @@ func (mh *MetricHandler) Ping(res http.ResponseWriter, db *sql.DB) {
 		http.Error(res, err.Error(), http.StatusInternalServerError)
 	}
 
+	res.WriteHeader(http.StatusOK)
+}
+
+func (mh *MetricHandler) UpdateMetricBatch(res http.ResponseWriter, req *http.Request) {
+	var buf bytes.Buffer
+
+	var metrics []models.Metrics
+
+	_, err := buf.ReadFrom(req.Body)
+	if err != nil {
+		http.Error(res, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err = json.Unmarshal(buf.Bytes(), &metrics); err != nil {
+		http.Error(res, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	mh.storage.AddBatch(metrics)
+
+	res.Header().Set("Content-Type", "application/json")
 	res.WriteHeader(http.StatusOK)
 }

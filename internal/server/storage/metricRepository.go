@@ -7,6 +7,18 @@ import (
 	"github.com/lambawebdev/metrics/internal/models"
 )
 
+const insertGaugeQuery = `
+            INSERT INTO metrics (name, type, value) VALUES ($1, $2, $3)
+            ON CONFLICT (name)
+            DO UPDATE SET value = $3
+			`
+
+const insertCounterQuery = `
+            INSERT INTO metrics (name, type, delta) VALUES ($1, $2, $3)
+            ON CONFLICT (name)
+            DO UPDATE SET delta = metrics.delta + $3
+			`
+
 type PGSQLMetricRepository struct {
 	db *sql.DB
 }
@@ -18,12 +30,7 @@ func NewPGSQLMetricRepository(db *sql.DB) *PGSQLMetricRepository {
 }
 
 func (repo *PGSQLMetricRepository) AddGauge(metricName string, metricValue float64) {
-	fmt.Println("GAUGE", metricName, metricValue)
-	_, err := repo.db.Exec(`
-	        INSERT INTO metrics (name, type, value) VALUES ($1, $2, $3)
-            ON CONFLICT (name)
-            DO UPDATE SET value = $3
-		`, metricName, "gauge", metricValue)
+	_, err := repo.db.Exec(insertGaugeQuery, metricName, "gauge", metricValue)
 
 	if err != nil {
 		fmt.Println(err)
@@ -31,13 +38,7 @@ func (repo *PGSQLMetricRepository) AddGauge(metricName string, metricValue float
 }
 
 func (repo *PGSQLMetricRepository) AddCounter(metricName string, metricValue int64) {
-	fmt.Println("COUNTER", metricName, metricValue)
-
-	_, err := repo.db.Exec(`
-	        INSERT INTO metrics (name, type, delta) VALUES ($1, $2, $3)
-            ON CONFLICT (name)
-            DO UPDATE SET delta = metrics.delta + $3
-		`, metricName, "counter", metricValue)
+	_, err := repo.db.Exec(insertCounterQuery, metricName, "counter", metricValue)
 
 	if err != nil {
 		fmt.Println(err)
@@ -68,13 +69,24 @@ func (repo *PGSQLMetricRepository) GetAll() []models.Metrics {
 		fmt.Println(err)
 	}
 
-	fmt.Println("GET ALL!!!", metrics)
-
 	return metrics
 }
 
 func (repo *PGSQLMetricRepository) GetMetric(metricName string, metricType string) (models.Metrics, bool) {
 	var metric models.Metrics
+	metric.ID = metricName
+	metric.MType = metricType
+
+	defValue := float64(0)
+	defDelta := int64(0)
+
+	if metricType == "gauge" {
+		metric.Value = &defValue
+	}
+
+	if metricType == "counter" {
+		metric.Delta = &defDelta
+	}
 
 	row := repo.db.QueryRow("SELECT name, type, delta, value FROM metrics WHERE type = ($1) AND name = ($2)", metricType, metricName)
 
@@ -83,4 +95,48 @@ func (repo *PGSQLMetricRepository) GetMetric(metricName string, metricType strin
 	}
 
 	return metric, true
+}
+
+func (repo *PGSQLMetricRepository) AddBatch(metrics []models.Metrics) {
+	tx, err := repo.db.Begin()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	stmtG, err := tx.Prepare(insertGaugeQuery)
+	if err != nil {
+		tx.Rollback()
+		panic(err.Error())
+	}
+	defer stmtG.Close()
+
+	stmtC, err := tx.Prepare(insertCounterQuery)
+	if err != nil {
+		tx.Rollback()
+		panic(err.Error())
+	}
+	defer stmtC.Close()
+
+	for _, m := range metrics {
+		if m.MType == "gauge" {
+			_, err := stmtG.Exec(m.ID, m.MType, m.Value)
+			if err != nil {
+				tx.Rollback()
+				fmt.Println(err.Error())
+			}
+		}
+
+		if m.MType == "counter" {
+			_, err := stmtC.Exec(m.ID, m.MType, m.Delta)
+			if err != nil {
+				tx.Rollback()
+				fmt.Println(err.Error())
+			}
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 }

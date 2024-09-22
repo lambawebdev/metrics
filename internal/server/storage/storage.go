@@ -3,7 +3,6 @@ package storage
 import (
 	"database/sql"
 	"fmt"
-
 	"os"
 
 	"github.com/lambawebdev/metrics/internal/models"
@@ -15,6 +14,7 @@ type MetricStorage interface {
 	AddCounter(metricName string, metricValue int64)
 	GetMetric(metricName string, metricType string) (models.Metrics, bool)
 	GetAll() []models.Metrics
+	AddBatch(metrics []models.Metrics)
 }
 
 type MemStorage struct {
@@ -90,6 +90,10 @@ func (u *MemStorage) GetMetric(metricName string, metricType string) (models.Met
 
 func (u *MemStorage) GetAll() []models.Metrics {
 	return u.Metrics
+}
+
+func (u *MemStorage) AddBatch(metrics []models.Metrics) {
+
 }
 
 func InitMemStorage() *MemStorage {

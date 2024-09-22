@@ -105,7 +105,19 @@ func GetAllMetrics(m Monitor) Monitor {
 }
 
 func SendMetrics(m Monitor) {
+	for _, m := range prepareMetrics(m) {
+		sendMetricReq(m)
+	}
+}
+
+func SendMetricsBatch(m Monitor) {
+	metrics := prepareMetrics(m)
+	sendMetricsBatchReq(metrics)
+}
+
+func prepareMetrics(m Monitor) []models.Metrics {
 	var monitor = reflect.ValueOf(m)
+	var batch []models.Metrics
 
 	for metricType, metrics := range validators.TypesMetrics() {
 		for _, metricName := range metrics {
@@ -139,14 +151,16 @@ func SendMetrics(m Monitor) {
 				metrics.Delta = &value
 			}
 
-			sendMetric(metrics)
+			batch = append(batch, metrics)
 		}
 	}
+
+	return batch
 }
 
 var client = resty.New()
 
-func sendMetric(metrics models.Metrics) error {
+func sendMetricReq(metrics models.Metrics) error {
 	body, err := json.Marshal(metrics)
 
 	if err != nil {
@@ -154,6 +168,28 @@ func sendMetric(metrics models.Metrics) error {
 	}
 
 	url := fmt.Sprintf("http://%s/update/", config.GetFlagRunAddr())
+
+	request := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("Content-Encoding", "gzip").
+		SetBody(body)
+
+	_, err = request.Post(url)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func sendMetricsBatchReq(metrics []models.Metrics) error {
+	body, err := json.Marshal(metrics)
+
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("http://%s/updates/", config.GetFlagRunAddr())
 
 	request := client.R().
 		SetHeader("Content-Type", "application/json").
