@@ -2,8 +2,13 @@ package storage
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"os"
+	"time"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lambawebdev/metrics/internal/models"
 )
 
@@ -30,18 +35,44 @@ func NewPGSQLMetricRepository(db *sql.DB) *PGSQLMetricRepository {
 }
 
 func (repo *PGSQLMetricRepository) AddGauge(metricName string, metricValue float64) {
-	_, err := repo.db.Exec(insertGaugeQuery, metricName, "gauge", metricValue)
+	var pgErr *pgconn.PgError
+	for _, backoff := range backoffSchedule {
+		_, err := repo.db.Exec(insertGaugeQuery, metricName, "gauge", metricValue)
 
-	if err != nil {
-		fmt.Println(err)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		if err == nil || !errors.As(err, &pgErr) {
+			break
+		}
+
+		if pgErr.Code == pgerrcode.ConnectionException {
+			fmt.Fprintf(os.Stderr, "Request error: %+v\n", err)
+			fmt.Fprintf(os.Stderr, "Retrying in %v\n", backoff)
+			time.Sleep(backoff)
+		}
 	}
 }
 
 func (repo *PGSQLMetricRepository) AddCounter(metricName string, metricValue int64) {
-	_, err := repo.db.Exec(insertCounterQuery, metricName, "counter", metricValue)
+	var pgErr *pgconn.PgError
+	for _, backoff := range backoffSchedule {
+		_, err := repo.db.Exec(insertCounterQuery, metricName, "counter", metricValue)
 
-	if err != nil {
-		fmt.Println(err)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		if err == nil || !errors.As(err, &pgErr) {
+			break
+		}
+
+		if pgErr.Code == pgerrcode.ConnectionException {
+			fmt.Fprintf(os.Stderr, "Request error: %+v\n", err)
+			fmt.Fprintf(os.Stderr, "Retrying in %v\n", backoff)
+			time.Sleep(backoff)
+		}
 	}
 }
 
@@ -88,10 +119,21 @@ func (repo *PGSQLMetricRepository) GetMetric(metricName string, metricType strin
 		metric.Delta = &defDelta
 	}
 
-	row := repo.db.QueryRow("SELECT name, type, delta, value FROM metrics WHERE type = ($1) AND name = ($2)", metricType, metricName)
+	var pgErr *pgconn.PgError
+	for _, backoff := range backoffSchedule {
+		row := repo.db.QueryRow("SELECT name, type, delta, value FROM metrics WHERE type = ($1) AND name = ($2)", metricType, metricName)
 
-	if err := row.Scan(&metric.ID, &metric.MType, &metric.Delta, &metric.Value); err != nil {
-		fmt.Println(err)
+		err := row.Scan(&metric.ID, &metric.MType, &metric.Delta, &metric.Value)
+
+		if err == nil || !errors.As(err, &pgErr) {
+			break
+		}
+
+		if pgErr.Code == pgerrcode.ConnectionException {
+			fmt.Fprintf(os.Stderr, "Request error: %+v\n", err)
+			fmt.Fprintf(os.Stderr, "Retrying in %v\n", backoff)
+			time.Sleep(backoff)
+		}
 	}
 
 	return metric, true
@@ -100,20 +142,20 @@ func (repo *PGSQLMetricRepository) GetMetric(metricName string, metricType strin
 func (repo *PGSQLMetricRepository) AddBatch(metrics []models.Metrics) {
 	tx, err := repo.db.Begin()
 	if err != nil {
-		panic(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	stmtG, err := tx.Prepare(insertGaugeQuery)
 	if err != nil {
 		tx.Rollback()
-		panic(err.Error())
+		fmt.Println(err.Error())
 	}
 	defer stmtG.Close()
 
 	stmtC, err := tx.Prepare(insertCounterQuery)
 	if err != nil {
 		tx.Rollback()
-		panic(err.Error())
+		fmt.Println(err.Error())
 	}
 	defer stmtC.Close()
 
@@ -135,8 +177,27 @@ func (repo *PGSQLMetricRepository) AddBatch(metrics []models.Metrics) {
 		}
 	}
 
-	err = tx.Commit()
-	if err != nil {
-		fmt.Println(err.Error())
+	var pgErr *pgconn.PgError
+	for _, backoff := range backoffSchedule {
+		err = tx.Commit()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+
+		if err == nil || !errors.As(err, &pgErr) {
+			break
+		}
+
+		if pgErr.Code == pgerrcode.ConnectionException {
+			fmt.Fprintf(os.Stderr, "Request error: %+v\n", err)
+			fmt.Fprintf(os.Stderr, "Retrying in %v\n", backoff)
+			time.Sleep(backoff)
+		}
 	}
+}
+
+var backoffSchedule = []time.Duration{
+	1 * time.Second,
+	3 * time.Second,
+	5 * time.Second,
 }

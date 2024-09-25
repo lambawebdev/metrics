@@ -44,7 +44,7 @@ func main() {
 		mh.Ping(w, db)
 	})))
 
-	r.Get("/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, _r *http.Request) {
+	r.Get("/", logger.WithLoggingMiddleware(middleware.GzipMiddleware(func(w http.ResponseWriter, _ *http.Request) {
 		mh.GetMetrics(w)
 	})))
 

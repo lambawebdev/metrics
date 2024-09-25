@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
 	"reflect"
 	"runtime"
 	"time"
@@ -106,7 +107,17 @@ func GetAllMetrics(m Monitor) Monitor {
 
 func SendMetrics(m Monitor) {
 	for _, m := range prepareMetrics(m) {
-		sendMetricReq(m)
+		for _, backoff := range backoffSchedule {
+			err := sendMetricReq(m)
+
+			if err == nil {
+				break
+			}
+
+			fmt.Fprintf(os.Stderr, "Request error: %+v\n", err)
+			fmt.Fprintf(os.Stderr, "Retrying in %v\n", backoff)
+			time.Sleep(backoff)
+		}
 	}
 }
 
@@ -202,4 +213,10 @@ func sendMetricsBatchReq(metrics []models.Metrics) error {
 	}
 
 	return nil
+}
+
+var backoffSchedule = []time.Duration{
+	1 * time.Second,
+	3 * time.Second,
+	5 * time.Second,
 }

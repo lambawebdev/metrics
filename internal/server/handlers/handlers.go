@@ -12,6 +12,11 @@ import (
 	"github.com/lambawebdev/metrics/internal/validators"
 )
 
+const (
+	counter string = "counter"
+	gauge   string = "gauge"
+)
+
 type MetricHandler struct {
 	storage storage.MetricStorage
 }
@@ -45,11 +50,11 @@ func (mh *MetricHandler) GetMetric(res http.ResponseWriter, req *http.Request) {
 
 	var value interface{}
 
-	if metricType == "gauge" {
+	if metricType == gauge {
 		value = metric.Value
 	}
 
-	if metricType == "counter" {
+	if metricType == counter {
 		value = metric.Delta
 	}
 
@@ -107,12 +112,12 @@ func (mh *MetricHandler) UpdateMetric(res http.ResponseWriter, req *http.Request
 	validators.ValidateMetricType(metricType, res)
 	validators.ValidateMetricValue(metricType, metricValue, res)
 
-	if metricType == "gauge" {
+	if metricType == gauge {
 		value, _ := strconv.ParseFloat(metricValue, 64)
 		mh.storage.AddGauge(metricName, value)
 	}
 
-	if metricType == "counter" {
+	if metricType == counter {
 		value, _ := strconv.ParseInt(metricValue, 10, 64)
 		mh.storage.AddCounter(metricName, value)
 	}
@@ -140,7 +145,7 @@ func (mh *MetricHandler) UpdateMetricV2(res http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	if m.MType == "gauge" {
+	if m.MType == gauge {
 		if m.Value == nil {
 			http.Error(res, "value have to be present", http.StatusBadRequest)
 			return
@@ -149,7 +154,7 @@ func (mh *MetricHandler) UpdateMetricV2(res http.ResponseWriter, req *http.Reque
 		mh.storage.AddGauge(m.ID, *m.Value)
 	}
 
-	if m.MType == "counter" {
+	if m.MType == counter {
 		if m.Delta == nil {
 			http.Error(res, "delta have to be present", http.StatusBadRequest)
 			return
