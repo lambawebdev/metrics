@@ -12,6 +12,7 @@ var options struct {
 	fileStoragePath      string
 	restoreMetrics       bool
 	databaseDsn          string
+	secretKey            string
 }
 
 func ParseFlags() {
@@ -20,6 +21,7 @@ func ParseFlags() {
 	flag.StringVar(&options.fileStoragePath, "f", "/tmp/storage", "file storage path")
 	flag.BoolVar(&options.restoreMetrics, "r", true, "if true - metrics will be loaded from file")
 	flag.StringVar(&options.databaseDsn, "d", "host=localhost user=test password=password dbname=videos sslmode=disable", "pgsql data source name")
+	flag.StringVar(&options.secretKey, "k", "", "set secret key")
 
 	flag.Parse()
 
@@ -48,6 +50,10 @@ func ParseFlags() {
 	if databaseDsn := os.Getenv("DATABASE_DSN"); databaseDsn != "" {
 		options.databaseDsn = databaseDsn
 	}
+
+	if secretKey := os.Getenv("KEY"); secretKey != "" {
+		options.secretKey = secretKey
+	}
 }
 
 func GetFlagRunAddr() string {
@@ -72,4 +78,8 @@ func SetRestoreMetrics(bool bool) {
 
 func GetDatabaseDsn() string {
 	return options.databaseDsn
+}
+
+func GetSecretKey() string {
+	return options.secretKey
 }

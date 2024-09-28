@@ -10,12 +10,14 @@ var options struct {
 	flagRunAddr           string
 	pollIntervalSeconds   uint64
 	reportIntervalSeconds uint64
+	secretKey             string
 }
 
 func ParseFlags() {
 	flag.StringVar(&options.flagRunAddr, "a", "localhost:8080", "address and port to run server")
 	flag.Uint64Var(&options.pollIntervalSeconds, "p", 2, "poll interval for updating metrics")
 	flag.Uint64Var(&options.reportIntervalSeconds, "r", 10, "report interval for sending metrics")
+	flag.StringVar(&options.secretKey, "k", "", "set secret key")
 
 	flag.Parse()
 
@@ -36,6 +38,10 @@ func ParseFlags() {
 			options.reportIntervalSeconds = value
 		}
 	}
+
+	if secretKey := os.Getenv("KEY"); secretKey != "" {
+		options.secretKey = secretKey
+	}
 }
 
 func GetFlagRunAddr() string {
@@ -48,4 +54,8 @@ func GetFlagPollIntervalSeconds() uint64 {
 
 func GetFlagReportIntervalSeconds() uint64 {
 	return options.reportIntervalSeconds
+}
+
+func GetSecretKey() string {
+	return options.secretKey
 }

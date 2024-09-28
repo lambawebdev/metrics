@@ -89,7 +89,7 @@ func createMetricsTable(db *sql.DB) {
 	    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
 		name VARCHAR(30) UNIQUE,
 		type VARCHAR(30),
-		delta INTEGER,
+		delta BIGINT,
 	    value double precision
 		);
 	`)

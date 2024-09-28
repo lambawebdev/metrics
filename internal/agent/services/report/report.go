@@ -1,6 +1,9 @@
 package report
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -185,6 +188,17 @@ func sendMetricReq(metrics models.Metrics) error {
 		SetHeader("Content-Encoding", "gzip").
 		SetBody(body)
 
+	if config.GetSecretKey() != "" {
+		secretKey := []byte(config.GetSecretKey())
+		hmac, err := getHmacBody(body, secretKey)
+
+		if err != nil {
+			return err
+		}
+
+		request.SetHeader("HashSHA256", hmac)
+	}
+
 	_, err = request.Post(url)
 	if err != nil {
 		return err
@@ -207,6 +221,17 @@ func sendMetricsBatchReq(metrics []models.Metrics) error {
 		SetHeader("Content-Encoding", "gzip").
 		SetBody(body)
 
+	if config.GetSecretKey() != "" {
+		secretKey := []byte(config.GetSecretKey())
+		hmac, err := getHmacBody(body, secretKey)
+
+		if err != nil {
+			return err
+		}
+
+		request.SetHeader("HashSHA256", hmac)
+	}
+
 	_, err = request.Post(url)
 	if err != nil {
 		return err
@@ -219,4 +244,15 @@ var backoffSchedule = []time.Duration{
 	1 * time.Second,
 	3 * time.Second,
 	5 * time.Second,
+}
+
+func getHmacBody(msg []byte, key []byte) (string, error) {
+	hmac := hmac.New(sha256.New, key)
+	_, err := hmac.Write(msg)
+
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hmac.Sum(nil)), nil
 }

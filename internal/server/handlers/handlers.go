@@ -2,12 +2,16 @@ package handlers
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/lambawebdev/metrics/internal/models"
+	"github.com/lambawebdev/metrics/internal/server/config"
 	"github.com/lambawebdev/metrics/internal/server/storage"
 	"github.com/lambawebdev/metrics/internal/validators"
 )
@@ -136,6 +140,21 @@ func (mh *MetricHandler) UpdateMetricV2(res http.ResponseWriter, req *http.Reque
 		return
 	}
 
+	if config.GetSecretKey() != "" && req.Header.Get("HashSHA256") != "" {
+		secretKey := []byte(config.GetSecretKey())
+
+		equal, err := verifyHmac(buf.Bytes(), secretKey, req.Header.Get("HashSHA256"))
+		if err != nil {
+			http.Error(res, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if !equal {
+			http.Error(res, "hash not equals", http.StatusBadRequest)
+			return
+		}
+	}
+
 	if err = json.Unmarshal(buf.Bytes(), &m); err != nil {
 		http.Error(res, err.Error(), http.StatusBadRequest)
 		return
@@ -202,4 +221,15 @@ func (mh *MetricHandler) UpdateMetricBatch(res http.ResponseWriter, req *http.Re
 
 	res.Header().Set("Content-Type", "application/json")
 	res.WriteHeader(http.StatusOK)
+}
+
+func verifyHmac(msg, key []byte, hash string) (bool, error) {
+	sig, err := hex.DecodeString(hash)
+	if err != nil {
+		return false, err
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write(msg)
+
+	return hmac.Equal(sig, mac.Sum(nil)), nil
 }
