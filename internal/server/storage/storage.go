@@ -1,52 +1,98 @@
 package storage
 
 import (
+	"database/sql"
 	"fmt"
-	"reflect"
+	"os"
 
+	"github.com/lambawebdev/metrics/internal/models"
 	"github.com/lambawebdev/metrics/internal/server/config"
 )
 
-type MetricWriter interface {
-	AddGauge(metricName string, metricValue float64)
-	AddCounter(metricName string, metricValue int64)
-	GetMetricValue(metricName string)
-	GetAll()
+type MemStorage struct {
+	Metrics []models.Metrics
 }
 
-type MemStorage struct {
-	Metrics map[string]interface{}
+func GetStorageFactory(db *sql.DB) (MetricStorage, error) {
+	if databaseDsn := os.Getenv("DATABASE_DSN"); databaseDsn != "" {
+		return NewPGSQLMetricRepository(db), nil
+	}
+
+	return InitMemStorage(), nil
 }
 
 func (u *MemStorage) AddGauge(metricName string, metricValue float64) {
-	u.Metrics[metricName] = metricValue
-}
+	var metric models.Metrics
+	metric.MType = "gauge"
+	metric.ID = metricName
+	metric.Value = &metricValue
 
-func (u *MemStorage) AddCounter(metricName string, metricValue int64) {
-	if u.Metrics[metricName] != nil {
-		if reflect.TypeOf(u.Metrics[metricName]).Kind() == reflect.Float64 {
-			metricValue = int64(u.Metrics[metricName].(float64)) + metricValue
-		}
-
-		if reflect.TypeOf(u.Metrics[metricName]).Kind() == reflect.Int64 {
-			metricValue = u.Metrics[metricName].(int64) + metricValue
+	for index, m := range u.Metrics {
+		if m.ID == metricName && m.MType == "gauge" {
+			u.Metrics = append(u.Metrics[:index], u.Metrics[index+1:]...)
 		}
 	}
 
-	u.Metrics[metricName] = metricValue
+	u.Metrics = append(u.Metrics, metric)
 }
 
-func (u *MemStorage) GetMetricValue(metricName string) interface{} {
-	return u.Metrics[metricName]
+func (u *MemStorage) AddCounter(metricName string, metricValue int64) {
+	var metric models.Metrics
+	metric.MType = "counter"
+	metric.ID = metricName
+	metric.Delta = &metricValue
+
+	for index, m := range u.Metrics {
+		if m.ID == metricName && m.MType == "counter" {
+			v := metricValue + *m.Delta
+			metric.Delta = &v
+
+			u.Metrics = append(u.Metrics[:index], u.Metrics[index+1:]...)
+		}
+	}
+
+	u.Metrics = append(u.Metrics, metric)
 }
 
-func (u *MemStorage) GetAll() map[string]interface{} {
+func (u *MemStorage) GetMetric(metricName string, metricType string) (models.Metrics, bool) {
+	for _, metric := range u.Metrics {
+		if metric.ID == metricName {
+			return metric, true
+		}
+	}
+
+	var m models.Metrics
+
+	defValue := float64(0)
+	defDelta := int64(0)
+
+	m.ID = metricName
+	m.MType = metricType
+
+	if metricType == "gauge" {
+		m.Value = &defValue
+	}
+
+	if metricType == "counter" {
+		m.Delta = &defDelta
+	}
+
+	return m, false
+}
+
+func (u *MemStorage) GetAll() []models.Metrics {
 	return u.Metrics
 }
 
+func (u *MemStorage) AddBatch(metrics []models.Metrics) {
+
+}
+
 func InitMemStorage() *MemStorage {
-	Storage := new(MemStorage)
-	Storage.Metrics = make(map[string]interface{})
+	var m []models.Metrics
+	Storage := &MemStorage{
+		Metrics: m,
+	}
 
 	if config.GetRestoreMetrics() {
 		m, err := GetAllMetrics()

@@ -37,15 +37,22 @@ func TestGetMetrics(t *testing.T) {
 			want: want{
 				code:         200,
 				metricValue:  125,
-				responseText: `{"Alloc":125}`,
+				responseText: `[{"value":125, "id":"Alloc", "type":"gauge"}]`,
 				contentType:  "text/html",
 			},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			var metric models.Metrics
+			v := float64(125)
+			metric.ID = "Alloc"
+			metric.MType = "gauge"
+			metric.Value = &v
+
 			storage := new(storage.MemStorage)
-			storage.Metrics = map[string]interface{}{"Alloc": 125}
+			storage.Metrics = []models.Metrics{metric}
+
 			mh := NewMetricHandler(storage)
 
 			w := httptest.NewRecorder()
@@ -115,8 +122,14 @@ func TestGetMetric(t *testing.T) {
 			request.SetPathValue("type", test.routeParams.metricType)
 			request.SetPathValue("name", test.routeParams.metricName)
 
+			var metric models.Metrics
+			v := float64(125)
+			metric.ID = "Alloc"
+			metric.MType = "gauge"
+			metric.Value = &v
+
 			storage := new(storage.MemStorage)
-			storage.Metrics = map[string]interface{}{"Alloc": 125}
+			storage.Metrics = []models.Metrics{metric}
 			h := NewMetricHandler(storage)
 
 			w := httptest.NewRecorder()
@@ -247,10 +260,15 @@ func TestGetMetricV2(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/value/", bytes.NewBuffer(body))
 			request.Header.Set("Content-Type", "application/json")
 
-			s := new(storage.MemStorage)
-			s.Metrics = make(map[string]interface{})
-			s.AddGauge("Alloc", 125.44)
-			mh := NewMetricHandler(s)
+			var metric models.Metrics
+			v := float64(125.44)
+			metric.ID = "Alloc"
+			metric.MType = "gauge"
+			metric.Value = &v
+
+			storage := new(storage.MemStorage)
+			storage.Metrics = []models.Metrics{metric}
+			mh := NewMetricHandler(storage)
 			config.SetRestoreMetrics(test.readFromFile)
 
 			w := httptest.NewRecorder()
@@ -268,7 +286,7 @@ func TestGetMetricV2(t *testing.T) {
 	}
 }
 
-func TestUpdateMetric(t *testing.T) {
+func TestUpdateMetriccc(t *testing.T) {
 	type want struct {
 		code         int
 		responseText string
@@ -347,7 +365,8 @@ func TestUpdateMetric(t *testing.T) {
 			request.SetPathValue("value", test.routeParams.metricValue)
 
 			storage := new(storage.MemStorage)
-			storage.Metrics = make(map[string]interface{})
+			var Metrics []models.Metrics
+			storage.Metrics = Metrics
 
 			w := httptest.NewRecorder()
 			mh := NewMetricHandler(storage)
@@ -438,7 +457,8 @@ func TestUpdateMetricV2(t *testing.T) {
 	}
 
 	storage := new(storage.MemStorage)
-	storage.Metrics = make(map[string]interface{})
+	var Metrics []models.Metrics
+	storage.Metrics = Metrics
 	mh := NewMetricHandler(storage)
 
 	handler := http.HandlerFunc(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {

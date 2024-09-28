@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/lambawebdev/metrics/internal/models"
 	"github.com/lambawebdev/metrics/internal/server/config"
 )
 
@@ -49,7 +50,7 @@ func NewConsumer(path string) (*Consumer, error) {
 	}, nil
 }
 
-func (c *Consumer) ReadEvent() (map[string]interface{}, error) {
+func (c *Consumer) ReadEvent() ([]models.Metrics, error) {
 	data, err := c.reader.ReadBytes('\n')
 	if err != nil && err != io.EOF {
 		return nil, err
@@ -59,7 +60,7 @@ func (c *Consumer) ReadEvent() (map[string]interface{}, error) {
 		data = []byte("{}")
 	}
 
-	event := make(map[string]interface{})
+	var event []models.Metrics
 	err = json.Unmarshal(data, &event)
 	if err != nil {
 		return nil, err
@@ -68,7 +69,7 @@ func (c *Consumer) ReadEvent() (map[string]interface{}, error) {
 	return event, nil
 }
 
-func GetAllMetrics() (map[string]interface{}, error) {
+func GetAllMetrics() ([]models.Metrics, error) {
 	err := CreateDir()
 	if err != nil {
 		return nil, err
@@ -86,7 +87,7 @@ func (c *Consumer) Close() error {
 	return c.file.Close()
 }
 
-func WriteToFile(s *MemStorage) error {
+func WriteToFile(s MetricStorage) error {
 	p, err := NewProducer(config.GetFileStoragePath() + "/metrics.json")
 
 	if err != nil {
@@ -113,7 +114,7 @@ func WriteToFile(s *MemStorage) error {
 	return p.writer.Flush()
 }
 
-func StartToWrite(s *MemStorage, interval uint64) {
+func StartToWrite(s MetricStorage, interval uint64) {
 	err := CreateDir()
 
 	if err != nil {
