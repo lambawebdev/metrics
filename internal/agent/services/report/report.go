@@ -1,6 +1,9 @@
 package report
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -13,42 +16,49 @@ import (
 	"github.com/lambawebdev/metrics/internal/agent/config"
 	"github.com/lambawebdev/metrics/internal/models"
 	"github.com/lambawebdev/metrics/internal/validators"
+	"github.com/shirou/gopsutil/v4/mem"
 )
 
 type Monitor struct {
-	Alloc         uint64
-	BuckHashSys   uint64
-	Frees         uint64
-	GCCPUFraction float64
-	GCSys         uint64
-	HeapAlloc     uint64
-	HeapIdle      uint64
-	HeapInuse     uint64
-	HeapObjects   uint64
-	HeapReleased  uint64
-	HeapSys       uint64
-	LastGC        uint64
-	Lookups       uint64
-	MCacheInuse   uint64
-	MCacheSys     uint64
-	MSpanInuse    uint64
-	MSpanSys      uint64
-	Mallocs       uint64
-	NextGC        uint64
-	NumForcedGC   uint32
-	NumGC         uint32
-	OtherSys      uint64
-	PauseTotalNs  uint64
-	StackInuse    uint64
-	StackSys      uint64
-	Sys           uint64
-	TotalAlloc    uint64
-	PollCount     uint64
-	RandomValue   uint64
+	Alloc           uint64
+	BuckHashSys     uint64
+	Frees           uint64
+	GCCPUFraction   float64
+	GCSys           uint64
+	HeapAlloc       uint64
+	HeapIdle        uint64
+	HeapInuse       uint64
+	HeapObjects     uint64
+	HeapReleased    uint64
+	HeapSys         uint64
+	LastGC          uint64
+	Lookups         uint64
+	MCacheInuse     uint64
+	MCacheSys       uint64
+	MSpanInuse      uint64
+	MSpanSys        uint64
+	Mallocs         uint64
+	NextGC          uint64
+	NumForcedGC     uint32
+	NumGC           uint32
+	OtherSys        uint64
+	PauseTotalNs    uint64
+	StackInuse      uint64
+	StackSys        uint64
+	Sys             uint64
+	TotalAlloc      uint64
+	PollCount       uint64
+	RandomValue     uint64
+	TotalMemory     float64
+	FreeMemory      float64
+	CPUutilization1 float64
 }
 
 func Start() {
 	var m Monitor
+
+	//32 метрики всего
+	ch := make(chan models.Metrics, 32)
 
 	pollTicker := time.NewTicker(time.Duration(config.GetFlagPollIntervalSeconds()) * time.Second)
 	defer pollTicker.Stop()
@@ -59,15 +69,15 @@ func Start() {
 	for {
 		select {
 		case <-pollTicker.C:
-			m = GetAllMetrics(m)
-
+			m = GetRuntimeMetrics(m)
+			m = GetAdditionalMetrics(m)
 		case <-reportTicker.C:
-			SendMetrics(m)
+			SendMetrics(m, ch)
 		}
 	}
 }
 
-func GetAllMetrics(m Monitor) Monitor {
+func GetRuntimeMetrics(m Monitor) Monitor {
 	var rtm runtime.MemStats
 
 	runtime.ReadMemStats(&rtm)
@@ -105,10 +115,37 @@ func GetAllMetrics(m Monitor) Monitor {
 	return m
 }
 
-func SendMetrics(m Monitor) {
-	for _, m := range prepareMetrics(m) {
+func GetAdditionalMetrics(m Monitor) Monitor {
+	v, _ := mem.VirtualMemory()
+
+	m.TotalMemory = float64(v.Total)
+	m.FreeMemory = float64(v.Free)
+	m.CPUutilization1 = float64(v.HugePagesFree)
+
+	return m
+}
+
+func SendMetrics(m Monitor, ch chan models.Metrics) {
+	//итератор по m структуре и записываем в канал
+	writeMetricToChannel(m, ch)
+
+	//worker pool 2 go routine и в каждую go рутину передаем канал
+	for w := uint64(1); w <= config.GetWorkerPoolsLimit(); w++ {
+		go worker(w, ch)
+	}
+}
+
+func SendMetricsBatch(m Monitor) {
+	metrics := prepareMetrics(m)
+	sendMetricsBatchReq(metrics)
+}
+
+func worker(id uint64, metrics <-chan models.Metrics) {
+	fmt.Println("woker", id)
+	for metric := range metrics {
 		for _, backoff := range backoffSchedule {
-			err := sendMetricReq(m)
+			fmt.Println(metric.Delta, metric.Value)
+			err := sendMetricReq(metric)
 
 			if err == nil {
 				break
@@ -121,9 +158,44 @@ func SendMetrics(m Monitor) {
 	}
 }
 
-func SendMetricsBatch(m Monitor) {
-	metrics := prepareMetrics(m)
-	sendMetricsBatchReq(metrics)
+func writeMetricToChannel(m Monitor, ch chan<- models.Metrics) {
+	var monitor = reflect.ValueOf(m)
+
+	for metricType, metrics := range validators.TypesMetrics() {
+		for _, metricName := range metrics {
+			metricValue := reflect.Indirect(monitor).FieldByName(metricName)
+
+			metrics := models.Metrics{}
+			metrics.ID = metricName
+			metrics.MType = metricType
+
+			k := metricValue.Kind()
+
+			if metricType == "gauge" {
+				if k == reflect.Uint32 {
+					value := float64(metricValue.Interface().(uint32))
+					metrics.Value = &value
+				}
+
+				if k == reflect.Uint64 {
+					value := float64(metricValue.Interface().(uint64))
+					metrics.Value = &value
+				}
+
+				if k == reflect.Float64 {
+					value := float64(metricValue.Interface().(float64))
+					metrics.Value = &value
+				}
+			}
+
+			if metricType == "counter" {
+				value := int64(metricValue.Interface().(uint64))
+				metrics.Delta = &value
+			}
+
+			ch <- metrics
+		}
+	}
 }
 
 func prepareMetrics(m Monitor) []models.Metrics {
@@ -185,6 +257,17 @@ func sendMetricReq(metrics models.Metrics) error {
 		SetHeader("Content-Encoding", "gzip").
 		SetBody(body)
 
+	if config.GetSecretKey() != "" {
+		secretKey := []byte(config.GetSecretKey())
+		hmac, err := getHmacBody(body, secretKey)
+
+		if err != nil {
+			return err
+		}
+
+		request.SetHeader("HashSHA256", hmac)
+	}
+
 	_, err = request.Post(url)
 	if err != nil {
 		return err
@@ -207,6 +290,17 @@ func sendMetricsBatchReq(metrics []models.Metrics) error {
 		SetHeader("Content-Encoding", "gzip").
 		SetBody(body)
 
+	if config.GetSecretKey() != "" {
+		secretKey := []byte(config.GetSecretKey())
+		hmac, err := getHmacBody(body, secretKey)
+
+		if err != nil {
+			return err
+		}
+
+		request.SetHeader("HashSHA256", hmac)
+	}
+
 	_, err = request.Post(url)
 	if err != nil {
 		return err
@@ -219,4 +313,15 @@ var backoffSchedule = []time.Duration{
 	1 * time.Second,
 	3 * time.Second,
 	5 * time.Second,
+}
+
+func getHmacBody(msg []byte, key []byte) (string, error) {
+	hmac := hmac.New(sha256.New, key)
+	_, err := hmac.Write(msg)
+
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hmac.Sum(nil)), nil
 }

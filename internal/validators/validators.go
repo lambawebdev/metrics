@@ -18,7 +18,8 @@ func TypesMetrics() map[string][]string {
 			"HeapReleased", "HeapSys", "LastGC", "Lookups", "MCacheInuse",
 			"MCacheSys", "MSpanInuse", "MSpanSys", "Mallocs", "NextGC",
 			"NumForcedGC", "NumGC", "OtherSys", "PauseTotalNs",
-			"StackInuse", "StackSys", "Sys", "TotalAlloc", "RandomValue",
+			"StackInuse", "StackSys", "Sys", "TotalAlloc", "RandomValue", "TotalMemory",
+			"FreeMemory", "CPUutilization1",
 		},
 		"counter": []string{"PollCount"},
 	}
